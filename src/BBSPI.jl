@@ -13,7 +13,7 @@ struct CPHA1 end
              mosi=master output pin
              miso=master input pin)
 
-Open ADXL345 conencted to GPIO pins `cs`, `sdo`, `sda` and `scl`.
+Connect to SPISlave using GPIO pins.
 
 Methods must be defined for `setindex!(::PinType, v)` and `getindex(::PinType)`.
 
