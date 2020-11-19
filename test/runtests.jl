@@ -3,14 +3,13 @@ using BBSPI
 
 @testset "BBSPI" begin
 
-    @test true
-
     # Input pin that produces a test pattern
     mutable struct TestOutPin
         bit
         bits
     end
     Base.getindex(b::TestOutPin) = b.bit
+    Base.length(b::TestOutPin) = 1
 
 
     # Output pins that reocrd the output value
@@ -25,7 +24,13 @@ using BBSPI
         if pin == clk
             # On rising clock edge, load a bit into MISO...
             if pin.v == 0 && v == 1
-                miso.bit = popfirst!(miso.bits)
+                if miso isa Vector
+                    for p in miso
+                        p.bit = popfirst!(p.bits)
+                    end
+                else
+                    miso.bit = popfirst!(miso.bits)
+                end
             end
 #            println(  "clock = ", v,
 #                    ", cs = ", cs.v,
@@ -61,4 +66,29 @@ using BBSPI
                     0,1,0,1,0,1,0,1,
                     0,0,0,0,0,0,0,0,
                     0,0,0,0,0,0,0,0]
+
+    cs = TestInPin(0)
+    clk = TestInPin(0)
+    mosi = TestInPin(0)
+    txbuf = Int[]
+    miso1 = TestOutPin(-1, [0,1,0,1,0,1,0,1,
+                            1,0,1,0,1,0,1,0,
+                            0,1,0,1,0,1,0,1,
+                            1,0,1,0,1,0,1,0])
+
+    miso2 = TestOutPin(-1, [1,0,1,0,1,0,1,0,
+                            0,1,0,1,0,1,0,1,
+                            1,0,1,0,1,0,1,0,
+                            0,1,0,1,0,1,0,1])
+
+    miso = [miso1, miso2]
+
+    spi = BBSPI.SPISlave(cs=cs, clk=clk, mosi=mosi, miso=miso)
+
+    rxbuf = zeros(UInt8, 4, 2)
+
+    BBSPI.transfer(spi, [0xAA, 0x55], rxbuf)
+
+    @test rxbuf[:,1] == [0x55, 0xaa, 0x55, 0xaa]
+    @test rxbuf[:,2] == [0xaa, 0x55, 0xaa, 0x55]
 end

@@ -6,88 +6,75 @@ struct CPHA0 end
 struct CPHA1 end
 
 
-struct SPISlave{ClockPhase,PinOut,PinIn}
-    chip_select::PinOut
-    clock::PinOut
-    master_out::PinOut
-    master_in::PinIn
-end
 
+"""
+    SPISlave(; cs=chip select output pin
+              clk=clock output pin
+             mosi=master output pin
+             miso=master input pin)
+
+Open ADXL345 conencted to GPIO pins `cs`, `sdo`, `sda` and `scl`.
+
+Methods must be defined for `setindex!(::PinType, v)` and `getindex(::PinType)`.
+
+e.g.
+
+```
+struct Pin
+    pin::UInt8
+end
+Base.setindex!(p::Pin, v) = gpioWrite(p.pin, v)
+Base.getindex(p::Pin) = gpioRead(p.pin)
+```
+
+A SPISlave can be created with a Vector of MISO pins.
+e.g. `miso=[slave1_miso, slave2_miso, slave3_miso]`.
+The slaves should share common SC, CLK and MOSI pins.
+In this configuration the slaves are selected simultaneously and all recieve
+the same commands from the master. On every clock, each miso pin is sampled
+in turn to read the individual responses of each slave.
+See PiADXL.jl for an example of reading from multiple ADXL345 sensors.
+"""
+struct SPISlave{ClockPhase,CST,CLKT,MOSIT,MISOT}
+    chip_select::CST
+    clock::CLKT
+    master_out::MOSIT
+    master_in::MISOT
+
+    function SPISlave{CPHA}(; cs::CST=nothing,
+                             clk::CLKT=nothing,
+                            mosi::MOSIT=nothing,
+                            miso::MISOT=nothing,
+                           ) where {CPHA,CST,CLKT,MOSIT,MISOT}
+
+        new{CPHA,CST,CLKT,MOSIT,MISOT}(cs,clk,mosi,miso)
+    end
+end
 
 SPISlave(; kwargs...) = SPISlave{CPHA1}(;kwargs...)
 
-function SPISlave{CPHA}(; cs::PinOut=nothing,
-                         clk::PinOut=nothing,
-                        mosi::PinOut=nothing,
-                        miso::PinIn=nothing,
-                       ) where {CPHA,PinOut,PinIn}
-    
-    SPISlave{CPHA,PinOut,PinIn}(cs, clk, mosi, miso)
-end
 
+"""
+    transfer(::SPISlave, tx_buffer, [rx_buffer])
 
-isidle(s) = s.chip_select[] == 0 && s.clock[] == 0
-
-
-function write_bit(s, tx)::UInt8
-    s.master_out[] = (tx & UInt8(0x80) == 0) ? 0 : 1
-    delay(s)
-    tx << 1
-end
-
-
-function read_bit(s, rx)::UInt8
-    rx = rx << 1 | s.master_in[]
-    delay(s)
-    rx
-end
-
-
-function transfer_bit(s::SPISlave{CPHA1}, tx, rx)
-
-    s.clock[] = 1
-    tx = write_bit(s, tx)
-
-    s.clock[] = 0
-    rx = read_bit(s, rx)
-
-    tx, rx
-end
-
-
-function transfer_bit(s::SPISlave{CPHA0}, tx, rx)
-
-    tx = write_bit(s, tx)
-
-    s.clock[] = 1
-    rx = read_bit(s, rx)
-
-    s.clock[] = 0
-
-    tx, rx
-end
-
-
-function transfer_byte(s, tx)::UInt8
-
-    rx = UInt8(0)
-    for i in 1:8
-        tx, rx = transfer_bit(s, tx, rx)
-    end
-    rx
-end
-
-
-function transfer(s, output, input)::Nothing
+Transfer bytes from `tx_buffer` to SPISlave.
+Store response in `rx_buffer`.
+"""
+function transfer(s, tx, rx=UInt8[])::Nothing
 
     @assert isidle(s)
+
+    rx_len = size(rx, 1)
 
     s.chip_select[] = 1
     delay(s)
 
-    for i in 1:length(input)
-        byte = i <= length(output) ? output[i] : UInt8(0)
-        input[i] = transfer_byte(s, byte)
+    for i in 1:max(length(tx), rx_len)
+        byte = i <= length(tx) ? tx[i] : UInt8(0)
+        byte = transfer_byte(s, byte)
+        if i <= rx_len
+            rx[i,:] = byte
+        end
     end
 
     s.chip_select[] = 0
@@ -95,6 +82,72 @@ function transfer(s, output, input)::Nothing
 
     @assert isidle(s)
     nothing
+end
+
+
+isidle(s) = s.chip_select[] == 0 && s.clock[] == 0
+
+
+function write_bit(pin, tx)
+    pin[] = (tx & UInt8(0x80) == 0) ? 0 : 1
+    tx << 1
+end
+
+
+function read_bit(pin, rx)
+    rx .<< 1 .| pin[]
+end
+
+function read_bit(pin::Vector, rx)
+    rx .<< 1 .| getindex.(pin)
+end
+
+
+function transfer_bit(s::SPISlave{CPHA1}, tx, rx)
+
+    s.clock[] = 1
+    tx = write_bit(s.master_out, tx)
+    delay(s)
+
+    s.clock[] = 0
+    rx = read_bit(s.master_in, rx)
+    delay(s)
+
+    tx, rx
+end
+
+
+function transfer_bit(s::SPISlave{CPHA0}, tx, rx)
+
+    tx = write_bit(s.master_out, tx)
+    delay(s)
+
+    s.clock[] = 1
+    rx = read_bit(s.master_in, rx)
+    delay(s)
+
+    s.clock[] = 0
+
+    tx, rx
+end
+
+
+"""
+    output_width(::SPISlave)
+
+Number of slaves connected in parallel.
+"""
+output_width(pin) = 1
+output_width(v::Vector) = length(v)
+output_width(s::SPISlave) = output_width(s.master_in)
+
+function transfer_byte(s, tx)
+
+    rx = zeros(UInt8, output_width(s))
+    for i in 1:8
+        tx, rx = transfer_bit(s, tx, rx)
+    end
+    rx
 end
 
 
