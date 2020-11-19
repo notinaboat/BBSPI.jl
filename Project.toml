@@ -1,0 +1,4 @@
+name = "BBSPI"
+uuid = "d9c4ebee-6e29-4c04-a492-1c21dbbc648c"
+authors = ["notinaboat <notinaboat@icloud.com>"]
+version = "0.1.0"
