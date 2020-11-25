@@ -73,7 +73,7 @@ function transfer(s, tx, rx=UInt8[])::Nothing
         byte = i <= length(tx) ? tx[i] : UInt8(0)
         byte = transfer_byte(s, byte)
         if i <= rx_len
-            rx[i,:] = byte
+            rx[i,:] .= byte
         end
     end
 
@@ -95,7 +95,7 @@ end
 
 
 function read_bit(pin, rx)
-    rx .<< 1 .| pin[]
+    rx << 1 | pin[]
 end
 
 function read_bit(pin::Vector, rx)
@@ -141,9 +141,12 @@ output_width(pin) = 1
 output_width(v::Vector) = length(v)
 output_width(s::SPISlave) = output_width(s.master_in)
 
+new_rx(pin) = UInt8(0)
+new_rx(v::Vector) = zeros(UInt8, length(v))
+
 function transfer_byte(s, tx)
 
-    rx = zeros(UInt8, output_width(s))
+    rx = new_rx(s.master_in)
     for i in 1:8
         tx, rx = transfer_bit(s, tx, rx)
     end
