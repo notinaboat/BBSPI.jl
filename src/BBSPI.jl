@@ -1,3 +1,18 @@
+"""
+# BBSPI
+
+Julia implementation of Bit Banged
+[SPI](https://en.wikipedia.org/wiki/Serial_Peripheral_Interface)
+
+See https://github.com/notinaboat/PiADXL345.jl for usage example.
+
+
+## TODO
+
+ * Try putting the `delay` function in `struct SPISlave`.
+   Does the delay loop still get inlined nicely?
+
+"""
 module BBSPI
 
 function delay end
@@ -26,14 +41,6 @@ end
 Base.setindex!(p::Pin, v) = gpioWrite(p.pin, v)
 Base.getindex(p::Pin) = gpioRead(p.pin)
 ```
-
-A SPISlave can be created with a Vector of MISO pins.
-e.g. `miso=[slave1_miso, slave2_miso, slave3_miso]`.
-The slaves should share common SC, CLK and MOSI pins.
-In this configuration the slaves are selected simultaneously and all recieve
-the same commands from the master. On every clock, each miso pin is sampled
-in turn to read the individual responses of each slave.
-See PiADXL.jl for an example of reading from multiple ADXL345 sensors.
 """
 struct SPISlave{ClockPhase,CST,CLKT,MOSIT,MISOT}
     chip_select::CST
@@ -64,16 +71,17 @@ function transfer(s, tx, rx=UInt8[])::Nothing
 
     @assert isidle(s)
 
-    rx_len = size(rx, 1)
+    rx_len = length(rx)
+    tx_len = length(tx)
 
     s.chip_select[] = 1
     delay(s)
 
-    for i in 1:max(length(tx), rx_len)
-        byte = i <= length(tx) ? tx[i] : UInt8(0)
+    for i in 1:max(tx_len, rx_len)
+        byte = i <= tx_len ? tx[i] : UInt8(0)
         byte = transfer_byte(s, byte)
         if i <= rx_len
-            rx[i,:] .= byte
+            rx[i] = byte
         end
     end
 
@@ -96,10 +104,6 @@ end
 
 function read_bit(pin, rx)
     rx << 1 | pin[]
-end
-
-function read_bit(pin::Vector, rx)
-    rx .<< 1 .| getindex.(pin)
 end
 
 
@@ -132,21 +136,9 @@ function transfer_bit(s::SPISlave{CPHA0}, tx, rx)
 end
 
 
-"""
-    output_width(::SPISlave)
-
-Number of slaves connected in parallel.
-"""
-output_width(pin) = 1
-output_width(v::Vector) = length(v)
-output_width(s::SPISlave) = output_width(s.master_in)
-
-new_rx(pin) = UInt8(0)
-new_rx(v::Vector) = zeros(UInt8, length(v))
-
 function transfer_byte(s, tx)
 
-    rx = new_rx(s.master_in)
+    rx = UInt8(0)
     for i in 1:8
         tx, rx = transfer_bit(s, tx, rx)
     end
