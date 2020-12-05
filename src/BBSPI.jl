@@ -23,10 +23,10 @@ struct CPHA1 end
 
 
 """
-    SPISlave(; cs=chip select output pin
-              clk=clock output pin
-             mosi=master output pin
-             miso=master input pin)
+    SPISlave(; cs=chip_select_output_pin,
+              clk=clock_output_pin,
+             mosi=master_output_pin,
+             miso=master_input_pin)
 
 Connect to SPISlave using GPIO pins.
 
