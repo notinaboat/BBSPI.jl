@@ -85,6 +85,7 @@ function transfer(s, tx, rx=UInt8[])::Nothing
         end
     end
 
+    s.master_out[] = 0
     s.chip_select[] = 0
     delay(s)
 
